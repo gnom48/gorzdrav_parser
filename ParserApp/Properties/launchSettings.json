@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ParserApp": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
