@@ -16,27 +16,27 @@ public class SeleniumManager : IDisposable
     public SeleniumManager()
     {
         var options = new ChromeOptions();
+
+        options.AddArgument("--headless=new");
         
-        // Скрываем автоматизацию
         options.AddArgument("--disable-blink-features=AutomationControlled");
         options.AddExcludedArgument("enable-automation");
         options.AddAdditionalOption("useAutomationExtension", false);
         
-        // Оптимизация производительности
         options.AddArgument("--disable-gpu");
         options.AddArgument("--no-sandbox");
         options.AddArgument("--disable-dev-shm-usage");
         
-        // Отключаем загрузку изображений для экономии трафика
         options.AddUserProfilePreference("profile.default_content_setting_values.images", 2);
         
-        // Реальные размеры окна
         options.AddArgument("--window-size=1920,1080");
+
+        options.AddArguments($@"--user-agent={UserAgentRotator.GetRandom()}");
+        // options.AddArguments($"--proxy-server={ProxyRotator.GetRandomString()}"); // ERROR: не работает что-то
         
         _driver = new ChromeDriver(options);
         _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
         
-        // Убираем метки автоматизации через JS
         RemoveAutomationTraces();
     }
 
@@ -57,32 +57,43 @@ public class SeleniumManager : IDisposable
     {
         try
         {
-            await Task.Run(() => _driver.Navigate().GoToUrl(baseUrl), cancellationToken);
+            _driver.Navigate().GoToUrl(baseUrl);
             int page = 1;
+
+            await WaitForPaginationToLoad(cancellationToken);
+
             int totalPages = GetTotalPages();
+
+            Console.WriteLine($"Начало парсинга. Всего страниц: {totalPages}");
 
             do
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                Console.WriteLine($"Обработка страницы {page}...");
                           
                 if (!await WaitForCardsToLoad(cancellationToken))
                 {
                     Console.WriteLine($"Не удалось загрузить карточки на странице {page}");
-                    continue;
+                    break;
                 }
                 
                 await SimulateHumanBehaviorAsync(cancellationToken);
                 
                 await ProcessCurrentPageAsync(page, cancellationToken);
                 
-                if (page <= totalPages)
+                if (page < totalPages)
                 {
                     await Task.Delay(Random.Shared.Next(2000, 5000), cancellationToken);
-                    await NavigateNextPage(page);
+                    bool moved = await NavigateNextPage(page, cancellationToken);
+                    if (!moved) break;
                 }
+                
+                page++;
 
             }
             while (page <= totalPages);
+
+            Console.WriteLine("Парсинг завершён");
         }
         catch (OperationCanceledException)
         {
@@ -94,57 +105,142 @@ public class SeleniumManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Получение общего количества страниц. Т.е. просто номер последней страницы
+    /// </summary>
+    /// <returns></returns>
     private int GetTotalPages()
     {
-        var paginationLinks = _driver.FindElements(By.CssSelector("ul.ui-table-pagination__pages-list > a"));
-        if (paginationLinks.Any())
+        try
         {
-            var lastLink = paginationLinks.Last();
-            string lastPageText = lastLink.Text.Trim();
-            
-            if (int.TryParse(lastPageText, out int lastPage))
+            var paginationLinks = _driver.FindElements(By.CssSelector("ul.ui-table-pagination__pages-list a"));
+            if (paginationLinks.Any())
             {
-                return lastPage;
+                var lastLink = paginationLinks.Last();
+                string lastPageText = lastLink.Text.Trim();
+                
+                if (int.TryParse(lastPageText, out int lastPage))
+                {
+                    Console.WriteLine($"Найдено страниц: {lastPage}");
+                    return lastPage;
+                }
             }
-        }
 
-        return -1;
+            var nextBtn = _driver.FindElements(By.CssSelector("#__nuxt > div.layout > div.catalog.catalog--theme--gz > div.block-container.block-container--with-paddings.block-container--desktop.block-container--theme--gz > div > div.catalog-page__content > div.ui-table-pagination.ui-table-pagination--theme--gz.catalog-list__pagination.catalog-list__pagination--theme--gz > ul > li > div"));
+            if (nextBtn.Any())
+            {
+                Console.WriteLine("Пагинация найдена, но количество страниц неизвестно - будет парситься до конца");
+                return int.MaxValue;
+            }
+
+            Console.WriteLine("Пагинация не найдена - парсим только первую страницу");
+            return 1; // NOTE: default 1 
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка при определении количества страниц: {ex.Message}");
+            return 1;
+        }
     }
 
     /// <summary>
     /// Переход на конкретную страницу пагинации
     /// </summary>
     /// <param name="pageNumber">Номер страницы для перехода</param>
-    public async Task<bool> NavigateNextPage(int pageNumber, CancellationToken cancellationToken = default)
+    public async Task<bool> NavigateNextPage(int? pageNumber = null, CancellationToken cancellationToken = default)
     {
         try
-        {
-            var pageLinks = _driver.FindElements(By.CssSelector("ul.ui-table-pagination__pages-list a[href*='/category/sredstva-ot-diabeta/']"));
-            
-            foreach (var link in pageLinks)
+        {            
+            if (pageNumber != null)
             {
-                string linkText = link.Text.Trim();
-                
-                if (string.IsNullOrEmpty(linkText) || linkText == "...") 
-                    continue;
-                
-                if (int.TryParse(linkText, out int linkPage) && linkPage == pageNumber)
+                var pageLinks = _driver.FindElements(By.CssSelector("ul.ui-table-pagination__pages-list a"));
+                foreach (var link in pageLinks)
                 {
-                    ((IJavaScriptExecutor)_driver).ExecuteScript(
-                        "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", link);
+                    string linkText = link.Text.Trim();
                     
-                    await Task.Delay(500, cancellationToken);
+                    if (string.IsNullOrEmpty(linkText) || linkText == "...") 
+                        continue;
                     
-                    link.Click();
-                                        
-                    return true;
+                    if (int.TryParse(linkText, out int linkPage) && linkPage == pageNumber + 1)
+                    {
+                        ((IJavaScriptExecutor)_driver).ExecuteScript(
+                            "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", link);
+                        
+                        await Task.Delay(500, cancellationToken);
+                        
+                        link.Click();
+                                            
+                        Console.WriteLine($"Перешли на страницу {pageNumber + 1}");
+                        return true;
+                    }
                 }
             }
-            return true;
+
+            var nextBtn = _driver.FindElements(By.CssSelector("#__nuxt > div.layout > div.catalog.catalog--theme--gz > div.block-container.block-container--with-paddings.block-container--desktop.block-container--theme--gz > div > div.catalog-page__content > div.ui-table-pagination.ui-table-pagination--theme--gz.catalog-list__pagination.catalog-list__pagination--theme--gz > ul > li > div"));
+            if (nextBtn.Any())
+            {
+                nextBtn.Last().Click();
+                return true;
+            }
+
+            Console.WriteLine("Больше страниц нет или совсем ничего не нашлось");
+            return false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Ошибка при переходе на страницу {pageNumber}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ожидание загрузки/отрисовки пагинации
+    /// </summary>
+    private async Task<bool> WaitForPaginationToLoad(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var paginationSelectors = new By[]
+            {
+                By.CssSelector("ul.ui-table-pagination__pages-list"),
+                By.CssSelector("[class*='pagination']"),
+                By.CssSelector("ul.pagination"),
+                By.CssSelector("div.pagination-wrapper")
+            };
+
+            bool anyPaginationFound = false;
+            foreach (var selector in paginationSelectors)
+            {
+                try
+                {
+                    await Task.Run(() => 
+                    {
+                        return _wait.Until(driver => 
+                            driver.FindElements(selector).Count > 0
+                        );
+                    }, cancellationToken);
+                    
+                    anyPaginationFound = true;
+                    Console.WriteLine($"Пагинация загрузилась");
+                    break;
+                }
+                catch (WebDriverTimeoutException)
+                {
+                    continue;
+                }
+            }
+
+            if (!anyPaginationFound)
+            {
+                Console.WriteLine("Пагинация не загрузилась");
+                return false;
+            }
+                       
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка при ожидании пагинации: {ex.Message}");
             return false;
         }
     }
@@ -156,9 +252,11 @@ public class SeleniumManager : IDisposable
     {
         try
         {
-            var cardSelectors = new[]
+            var cardSelectors = new By[]
             {
-                By.ClassName(".product-card.product-card--grid.product-card--theme--gz")
+                By.CssSelector("div.product-card.product-card--grid.product-card--theme--gz"),
+                By.CssSelector(".product-card"),
+                By.CssSelector("[class*='product-card']")
             };
 
             bool anyCardFound = false;
@@ -189,8 +287,7 @@ public class SeleniumManager : IDisposable
                 return false;
             }
 
-            // Дополнительно ждем появления хотя бы 5 карточек (убеждаемся что загрузились все)
-            await Task.Delay(2000, cancellationToken);
+            await Task.Delay(2000, cancellationToken); // NOTE: не приятно но ладно
             
             return true;
         }
@@ -210,8 +307,7 @@ public class SeleniumManager : IDisposable
         {
             var jsExecutor = (IJavaScriptExecutor)_driver;
             
-            // Плавный скролл вниз
-            var scrollHeight = (long)jsExecutor.ExecuteScript("return document.body.scrollHeight");
+            var scrollHeight = (long)(jsExecutor.ExecuteScript("return document.body.scrollHeight") ?? throw new NullReferenceException());
             int scrollSteps = 3;
             
             for (int i = 1; i <= scrollSteps; i++)
@@ -221,11 +317,11 @@ public class SeleniumManager : IDisposable
                 int scrollPosition = (int)(scrollHeight * i / scrollSteps);
                 jsExecutor.ExecuteScript($"window.scrollTo(0, {scrollPosition})");
                 
-                // Случайная задержка между скроллами
+                // NOTE: Случайная задержка между скроллами
                 await Task.Delay(Random.Shared.Next(800, 1500), cancellationToken);
             }
             
-            // Небольшая пауза перед обработкой
+            // NOTE: Небольшая пауза перед обработкой
             await Task.Delay(Random.Shared.Next(1000, 2000), cancellationToken);
         }
         catch (Exception ex)

@@ -14,7 +14,7 @@ public class ParserWorker<T>(
     public async Task StartAsync()
     {
         seleniumManager.OnNewPage += ParseAsync;
-        await seleniumManager.NavigatePagesAsync(parserSettings.BaseUrl);
+        await seleniumManager.NavigatePagesAsync(parserSettings.BaseUrl + parserSettings.Path);
     }
 
     private async Task ParseAsync(Stream sourceStream, CancellationToken cancellationToken)

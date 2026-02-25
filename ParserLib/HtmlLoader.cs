@@ -43,7 +43,7 @@ class HtmlLoader(IParserSettings settings): IDisposable
     public async Task<Stream?> GetSourceByPageId(int id, CancellationToken cancellationToken)
     {
         var currentUrl = new StringBuilder(settings.BaseUrl);
-        currentUrl.Append(settings.Prefix);
+        currentUrl.Append(settings.Path);
         currentUrl.Replace("{CurrentId}", id.ToString());
 
         var response = await client.Value.GetAsync(currentUrl.ToString(), cancellationToken);

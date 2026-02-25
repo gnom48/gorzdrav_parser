@@ -14,13 +14,11 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
     {
         var drugs = new List<Drug>();
 
-        // Находим все карточки товаров
         var cardNodes = document.QuerySelectorAll("div.product-card.product-card--grid.product-card--theme--gz");
         foreach (var card in cardNodes)
         {
             var drug = new Drug();
 
-            // Рецептурность
             var prescriptionChip = card.QuerySelector(".product-card-body__chip-line .ui-chip");
             if (prescriptionChip != null)
             {
@@ -33,22 +31,19 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
                 }
             }
 
-            // Изображение
             var img = card.QuerySelector(".product-card-image__container img");
             if (img != null)
             {
                 var src = img.GetAttribute("src");
                 if (!string.IsNullOrEmpty(src))
                 {
-                    // Если относительный URL, добавляем базовый
                     if (src.StartsWith("/"))
-                        drug.ImageUrl = parserSettings.BaseUrl + parserSettings.Prefix + src;
+                        drug.ImageUrl = parserSettings.BaseUrl + parserSettings.Path + src;
                     else
                         drug.ImageUrl = src;
                 }
             }
 
-            // Название и ссылка
             var titleLink = card.QuerySelector("a.product-card-body__title");
             if (titleLink != null)
             {
@@ -56,11 +51,10 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
                 var href = titleLink.GetAttribute("href");
                 if (!string.IsNullOrEmpty(href))
                 {
-                    drug.DrugUrl = href.StartsWith("/") ? parserSettings.BaseUrl + parserSettings.Prefix + href : href;
+                    drug.DrugUrl = href.StartsWith("/") ? parserSettings.BaseUrl + parserSettings.Path + href : href;
                 }
             }
 
-            // Производитель и действующее вещество (ищем в списке)
             var items = card.QuerySelectorAll(".product-card__list .product-card__item");
             foreach (var item in items)
             {
@@ -78,7 +72,6 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
                 }
             }
 
-            // Цены
             var priceElement = card.QuerySelector(".ui-price__price");
             if (priceElement != null)
             {
@@ -91,7 +84,6 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
                 drug.OldPrice = ParsePrice(oldPriceElement.TextContent);
             }
 
-            // Добавляем только если есть название
             if (!string.IsNullOrEmpty(drug.Name))
             {
                 drugs.Add(drug);
@@ -106,9 +98,7 @@ public class GorzdravParser(IParserSettings parserSettings) : IParser<IEnumerabl
         if (string.IsNullOrWhiteSpace(priceText))
             return 0;
 
-        // Удаляем все кроме цифр, запятой и точки
         var cleaned = Regex.Replace(priceText, @"[^\d,\.]", "");
-        // Заменяем запятую на точку для парсинга
         cleaned = cleaned.Replace(',', '.');
 
         if (decimal.TryParse(cleaned, System.Globalization.NumberStyles.Any, 

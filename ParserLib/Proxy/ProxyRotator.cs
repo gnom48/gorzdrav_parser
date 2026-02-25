@@ -16,5 +16,7 @@ public static class ProxyRotator
             BypassProxyOnLocal = false,
             UseDefaultCredentials = false
         };
+
+    public static string GetRandomString() => Ips[Random.Shared.Next(Ips.Length)];
 }
 
