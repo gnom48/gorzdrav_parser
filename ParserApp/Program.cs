@@ -7,8 +7,18 @@ namespace ParserApp;
 
 internal class Program
 {
-    static void Main(string[] args)
+    static async Task Main(string[] args)
     {
+        Console.WriteLine(
+            """
+  ____                   _                   ____                          
+ / ___| ___  _ __ ______| |_ __ __ ___   __ |  _ \ __ _ _ __ ___  ___ _ __ 
+| |  _ / _ \| '__|_  / _` | '__/ _` \ \ / / | |_) / _` | '__/ __|/ _ \ '__|
+| |_| | (_) | |   / / (_| | | | (_| |\ V /  |  __/ (_| | |  \__ \  __/ |   
+ \____|\___/|_|  /___\__,_|_|  \__,_| \_/   |_|   \__,_|_|  |___/\___|_|   
+"""
+        );
+
         var settings = new GorzdravSettings();
         var pw = new ParserWorker<IEnumerable<Drug>>(
             seleniumManager: new SeleniumManager(),
@@ -27,7 +37,10 @@ internal class Program
             await WriteDrugsToCsvAsync(drugs);
         };
 
-        Task.Run(async () => await pw.StartAsync());
+        Console.WriteLine("Парсинг начался. Ожидайте завершения процесса...");
+        await pw.StartAsync();
+        Console.WriteLine("Парсинг завершён. Нажмите любую клавишу для выхода...");
+        Console.ReadKey();
     }
 
     private static readonly object _csvLock = new object();
@@ -42,7 +55,7 @@ internal class Program
             {
                 if (!_headerWritten && new FileInfo(CsvFilePath).Length == 0)
                 {
-                    writer.WriteLine("PrescriptionStatus,ImageUrl,Name,Manufacturer,ActiveSubstance,Price,OldPrice,DrugUrl");
+                    writer.WriteLine($"{nameof(Drug.PrescriptionStatus)},{nameof(Drug.ImageUrl)},{nameof(Drug.Name)},{nameof(Drug.Manufacturer)},{nameof(Drug.ActiveSubstance)},{nameof(Drug.Price)},{nameof(Drug.OldPrice)},{nameof(Drug.DrugUrl)}");
                     _headerWritten = true;
                 }
 
@@ -62,7 +75,7 @@ internal class Program
                 }
             }
         }
-        await Task.CompletedTask; // lock синхронный, но метод async для совместимости
+        await Task.CompletedTask;
     }
 
     private static string EscapeCsvField(string field)
