@@ -45,7 +45,7 @@ internal class Program
 
     private static readonly object _csvLock = new object();
     private static bool _headerWritten = false;
-    private const string CsvFilePath = "drugs.csv";
+    private const string CsvFilePath = "results.csv";
 
     private static async Task WriteDrugsToCsvAsync(IEnumerable<Drug> drugs)
     {
